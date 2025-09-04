@@ -1,0 +1,94 @@
+# Button Shop Plugin
+SHOP_MAIN_PANEL_TITLE=§6Button Shop System
+SHOP_MAIN_PANEL_CONTENT=§fWelcome to the Button Shop System! You can create shops to sell items or browse other players' shops.
+SHOP_CREATE_BUTTON=§aCreate Shop
+SHOP_MY_SHOPS_BUTTON=§eMy Shops
+SHOP_NEARBY_BUTTON=§bNearby Shops
+SHOP_CLOSE_BUTTON=§cClose
+SHOP_PANEL_ERROR=§cShop panel operation error!
+
+# Shop Type Selection
+SHOP_TYPE_SELECT_TITLE=§6Select Shop Type
+SHOP_TYPE_SELECT_CONTENT=§fPlease select the type of shop you want to create:
+SHOP_TYPE_SELL_BUTTON=§aSell Shop(Sell items to other players)
+SHOP_TYPE_BUY_BUTTON=§bBuy Shop(Buy items from other players)
+
+SHOP_ITEM_SELECT_TITLE=§eSelect Item to Sell
+SHOP_ITEM_SELECT_CONTENT=§fPlease select an item from your inventory to create a shop:
+SHOP_NO_ITEMS=§cNo sellable items in inventory!
+SHOP_BACK_BUTTON=§eBack
+
+SHOP_PRICE_PANEL_TITLE=§eSet Item Price
+SHOP_PRICE_ITEM_INFO=§fItem to sell: §a{0} §fx§a{1}
+SHOP_PRICE_INPUT_LABEL=§eUnit Price Setting
+SHOP_PRICE_INPUT_PLACEHOLDER=Enter price per item, e.g.: 10
+
+# Buy Shop Related
+SHOP_BUY_PRICE_PANEL_TITLE=§bSet Buy Price
+SHOP_BUY_ITEM_INFO=§fItem to buy: §a{0}
+SHOP_BUY_PRICE_INPUT_LABEL=§bBuy Price
+SHOP_BUY_PRICE_INPUT_PLACEHOLDER=Enter buy price per item, e.g.: 8
+SHOP_BUY_BUDGET_LABEL=§6Budget Setting
+SHOP_BUY_BUDGET_PLACEHOLDER=Enter total budget, e.g.: 1000
+
+SHOP_SETUP_TITLE=§aPrepare to Create Shop
+SHOP_SETUP_INSTRUCTION=§fShop setup complete!\n§aItem: §f{0} x{1}\n§aUnit Price: §f{2}\n\n§eNow right-click on a button to create the shop!
+SHOP_BUY_SETUP_INSTRUCTION=§fBuy shop setup complete!\n§bItem: §f{0}\n§bBuy Price: §f{1}\n§6Budget: §f{2} §7(can buy {3} items)\n\n§eNow right-click on a button to create the buy shop!
+
+SHOP_INVALID_PRICE=§cInvalid price! Please enter a number greater than 0
+SHOP_INVALID_BUDGET=§cInvalid budget! Budget must be greater than 0 and at least equal to unit price
+SHOP_INSUFFICIENT_FUNDS_FOR_BUDGET=§cInsufficient funds! Need {0}, you have {1}
+SHOP_RESULT_TITLE=§6Operation Result
+
+SHOP_ALREADY_EXISTS=§cA shop already exists at this location!
+SHOP_ITEM_NOT_FOUND=§cItem not found in your inventory!
+SHOP_CREATED_SUCCESS=§aShop created successfully! §fSelling {0} x{1}, unit price {2}
+SHOP_BUY_CREATED_SUCCESS=§bBuy shop created successfully! §fBuying {0}, unit price {1}, budget {2}, can buy {3} items
+SHOP_CREATE_FAILED=§cShop creation failed!
+SHOP_ITEM_REMOVE_FAILED=§cFailed to remove item from inventory!
+SHOP_BUDGET_DEDUCT_FAILED=§cFailed to deduct budget!
+
+SHOP_DETAIL_TITLE=§6Shop Details
+SHOP_DETAIL_INFO=§fOwner: §a{0}\n§fItem: §e{1}\n§fStock: §c{2}\n§fUnit Price: §6{3}
+SHOP_BUY_BUTTON=§aBuy
+SHOP_MANAGE_BUTTON=§eManage Shop
+
+SHOP_PURCHASE_TITLE=§aBuy Items
+SHOP_PURCHASE_INFO=§fItem: §e{0}\n§fStock: §c{1}\n§fUnit Price: §6{2}
+SHOP_QUANTITY_LABEL=§ePurchase Quantity
+SHOP_QUANTITY_PLACEHOLDER=Enter quantity to buy (max {0})
+
+SHOP_INVALID_QUANTITY=§cInvalid quantity! Please check input and stock
+SHOP_CORE_PLUGIN_NOT_FOUND=§cEconomy core plugin not found!
+SHOP_INSUFFICIENT_FUNDS=§cInsufficient funds! Need {0}, you have {1}
+SHOP_INSUFFICIENT_STOCK=§cInsufficient stock!
+SHOP_PAYMENT_FAILED=§cPayment failed!
+SHOP_OWNER_PAYMENT_FAILED=§cFailed to pay shop owner!
+SHOP_PURCHASE_SUCCESS=§aPurchase successful! Got {0} {1}, spent {2}
+SHOP_PURCHASE_SUCCESS_WITH_TAX=§aPurchase successful! Got {0} {1}, spent {2} §7(including tax {3})
+SHOP_SELL_SUCCESS=§aSale successful! Earned {2} coins, sold {0} {1}
+SHOP_SELL_SUCCESS_WITH_TAX=§aSale successful! Earned {2} coins, sold {0} {1} §7(tax {3})
+SHOP_ITEM_GIVE_FAILED=§cFailed to give items!
+SHOP_PURCHASE_ERROR=§cError occurred during purchase!
+
+# New Error Messages
+SHOP_NOT_AVAILABLE=§cShop is temporarily unavailable!
+SHOP_INSUFFICIENT_BUDGET=§cShop budget insufficient!
+SHOP_PLAYER_NO_ITEMS=§cYou don't have enough items!
+
+# Notification Messages
+SHOP_SALE_NOTIFICATION=§aNew transaction in your shop! §f{0} bought {1} {2}, income {3}
+SHOP_BUY_NOTIFICATION=§bYour buy shop received items! §f{0} sold {1} {2}, spent {3}
+
+# Inventory related error messages
+SHOP_INVENTORY_FULL=§cInventory is full, cannot complete transaction!
+SHOP_ITEM_STACK_ERROR=§cItem stack processing error!
+
+# Shop protection related messages
+SHOP_BREAK_PROTECTED=§cThis button is §a{0}§c's shop, you cannot break it!
+SHOP_REMOVED_BY_OWNER_SELL=§aShop removed! §fRemaining stock {0} {1} returned to inventory
+SHOP_REMOVED_BY_OWNER_BUY=§aBuy shop removed! §fRemaining budget {0} coins returned to account
+SHOP_REMOVAL_ERROR=§cError occurred while removing shop!
+
+# Interaction hint messages
+SHOP_NOT_BUTTON=§cYou are interacting with §e{0}§c, please use a button to create a shop!

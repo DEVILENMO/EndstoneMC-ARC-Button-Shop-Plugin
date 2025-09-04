@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "endstone_arc_button_shop"
+version = "0.1.0"
+dependencies = []
+authors = [
+    { name = "DEVILENMO", email = "DEVILENMO@gmail.com" },
+]
+description = "Button Shop plugin for ARC Core - Create player-run shops using buttons."
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["endstone", "plugin", "shop", "economy", "button"]
+
+[project.urls]
+Homepage = "https://github.com/DEVILENMO/EndstoneMC-ARC-Button-Shop-Plugin"
+
+[project.entry-points."endstone"]
+arc_button_shop = "endstone_arc_button_shop:ARCButtonShopPlugin"

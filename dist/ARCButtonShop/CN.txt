@@ -1,0 +1,103 @@
+# 按钮商店插件
+SHOP_MAIN_PANEL_TITLE=§6按钮商店系统
+SHOP_MAIN_PANEL_CONTENT=§f欢迎使用按钮商店系统！你可以创建商店出售物品，或浏览其他玩家的商店。
+SHOP_CREATE_BUTTON=§a创建商店
+SHOP_MY_SHOPS_BUTTON=§e我的商店  
+SHOP_NEARBY_BUTTON=§b附近商店
+SHOP_CLOSE_BUTTON=§c关闭
+SHOP_PANEL_ERROR=§c商店面板操作出现错误！
+
+# 商店类型选择
+SHOP_TYPE_SELECT_TITLE=§6选择商店类型
+SHOP_TYPE_SELECT_CONTENT=§f请选择你要创建的商店类型：
+SHOP_TYPE_SELL_BUTTON=§a出售商店(出售物品给其他玩家)
+SHOP_TYPE_BUY_BUTTON=§b收购商店(收购其他玩家的物品)
+
+SHOP_ITEM_SELECT_TITLE=§e选择要出售的物品
+SHOP_ITEM_SELECT_CONTENT=§f请从背包中选择一个物品来创建商店：
+SHOP_NO_ITEMS=§c背包中没有可出售的物品！
+SHOP_BACK_BUTTON=§e返回
+
+SHOP_PRICE_PANEL_TITLE=§e设置商品价格
+SHOP_PRICE_ITEM_INFO=§f要出售的物品: §a{0} §fx§a{1}
+SHOP_PRICE_INPUT_LABEL=§e单价设置
+SHOP_PRICE_INPUT_PLACEHOLDER=输入每个物品的价格，例如：10
+
+# 收购商店相关
+SHOP_BUY_PRICE_PANEL_TITLE=§b设置收购价格
+SHOP_BUY_ITEM_INFO=§f要收购的物品: §a{0}
+SHOP_BUY_PRICE_INPUT_LABEL=§b收购单价
+SHOP_BUY_PRICE_INPUT_PLACEHOLDER=输入每个物品的收购价格，例如：8
+SHOP_BUY_BUDGET_LABEL=§6预算设置
+SHOP_BUY_BUDGET_PLACEHOLDER=输入总预算，例如：1000
+
+SHOP_SETUP_TITLE=§a准备创建商店
+SHOP_SETUP_INSTRUCTION=§f商店设置完成！\n§a物品: §f{0} x{1}\n§a单价: §f{2}\n\n§e现在请右键点击一个按钮来创建商店！
+SHOP_BUY_SETUP_INSTRUCTION=§f收购商店设置完成！\n§b物品: §f{0}\n§b收购价: §f{1}\n§6预算: §f{2} §7(可收购{3}个)\n\n§e现在请右键点击一个按钮来创建收购商店！
+
+SHOP_INVALID_PRICE=§c无效的价格！请输入大于0的数字
+SHOP_INVALID_BUDGET=§c无效的预算！预算必须大于0且不少于单价
+SHOP_INSUFFICIENT_FUNDS_FOR_BUDGET=§c资金不足！预算需要{0}，你只有{1}
+SHOP_RESULT_TITLE=§6操作结果
+
+SHOP_ALREADY_EXISTS=§c该位置已经有商店了！
+SHOP_ITEM_NOT_FOUND=§c在你的背包中找不到该物品！
+SHOP_CREATED_SUCCESS=§a商店创建成功！§f出售 {0} x{1}，单价 {2}
+SHOP_BUY_CREATED_SUCCESS=§b收购商店创建成功！§f收购 {0}，单价 {1}，预算 {2}，可收购 {3} 个
+SHOP_CREATE_FAILED=§c商店创建失败！
+SHOP_ITEM_REMOVE_FAILED=§c从背包移除物品失败！
+SHOP_BUDGET_DEDUCT_FAILED=§c预算资金扣除失败！
+
+SHOP_DETAIL_TITLE=§6商店详情
+SHOP_DETAIL_INFO=§f店主: §a{0}\n§f商品: §e{1}\n§f库存: §c{2}\n§f单价: §6{3}
+SHOP_BUY_BUTTON=§a购买
+SHOP_MANAGE_BUTTON=§e管理商店
+
+SHOP_PURCHASE_TITLE=§a购买商品
+SHOP_PURCHASE_INFO=§f商品: §e{0}\n§f库存: §c{1}\n§f单价: §6{2}
+SHOP_QUANTITY_LABEL=§e购买数量
+SHOP_QUANTITY_PLACEHOLDER=输入购买数量（最大{0}）
+
+SHOP_INVALID_QUANTITY=§c无效的数量！请检查输入和库存
+SHOP_CORE_PLUGIN_NOT_FOUND=§c未找到经济核心插件！
+SHOP_INSUFFICIENT_FUNDS=§c资金不足！需要 {0}，你只有 {1}
+SHOP_INSUFFICIENT_STOCK=§c库存不足！
+SHOP_PAYMENT_FAILED=§c支付失败！
+SHOP_OWNER_PAYMENT_FAILED=§c给店主付款失败！
+SHOP_PURCHASE_SUCCESS=§a购买成功！获得 {0} 个 {1}，花费 {2}
+SHOP_PURCHASE_SUCCESS_WITH_TAX=§a购买成功！获得 {0} 个 {1}，花费 {2} §7(含税 {3})
+SHOP_SELL_SUCCESS=§a出售成功！获得 {2} 金币，出售了 {0} 个 {1}
+SHOP_SELL_SUCCESS_WITH_TAX=§a出售成功！获得 {2} 金币，出售了 {0} 个 {1} §7(税费 {3})
+
+# 新增按钮和标签
+SHOP_SELL_BUTTON=§a出售
+SHOP_SELL_TITLE=§a出售物品
+SHOP_SELL_QUANTITY_LABEL=§e出售数量
+SHOP_SELL_QUANTITY_PLACEHOLDER=输入出售数量（最大{0}）
+
+# 税收提示
+SHOP_TAX_INFO=§7交易税: {0}% (税费: {1})
+SHOP_ITEM_GIVE_FAILED=§c给予物品失败！
+SHOP_PURCHASE_ERROR=§c购买时出现错误！
+
+# 新的错误消息
+SHOP_NOT_AVAILABLE=§c商店暂时不可用！
+SHOP_INSUFFICIENT_BUDGET=§c商店预算不足！
+SHOP_PLAYER_NO_ITEMS=§c你没有足够的物品！
+
+# 通知消息
+SHOP_SALE_NOTIFICATION=§a你的商店有新交易！§f{0} 购买了 {1} 个 {2}，收入 {3}
+SHOP_BUY_NOTIFICATION=§b你的收购商店收到物品！§f{0} 出售了 {1} 个 {2}，支出 {3}
+
+# 背包相关错误消息
+SHOP_INVENTORY_FULL=§c背包已满，无法完成交易！
+SHOP_ITEM_STACK_ERROR=§c物品堆栈处理出现错误！
+
+# 商店保护相关消息
+SHOP_BREAK_PROTECTED=§c这个按钮是 §a{0} §c的商店，你不能破坏它！
+SHOP_REMOVED_BY_OWNER_SELL=§a商店已删除！§f剩余库存 {0} 个 {1} 已返还到背包
+SHOP_REMOVED_BY_OWNER_BUY=§a收购商店已删除！§f剩余预算 {0} 金币已返还到账户
+SHOP_REMOVAL_ERROR=§c删除商店时出现错误！
+
+# 交互提示消息
+SHOP_NOT_BUTTON=§c你正在交互的是 §e{0} §c，请使用按钮来创建商店！
