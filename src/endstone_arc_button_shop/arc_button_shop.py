@@ -10,6 +10,7 @@ from endstone.form import ActionForm, ModalForm, Label, TextInput
 from endstone.block import Block
 
 from .DatabaseManager import DatabaseManager
+from .InventoryManager import InventoryManager
 from .LanguageManager import LanguageManager
 from .SettingManager import SettingManager
 
@@ -70,6 +71,9 @@ class ARCButtonShopPlugin(Plugin):
         
         # 初始化设置管理器
         self.setting_manager = SettingManager()
+        
+        # 初始化背包管理类（复用附魔/物品匹配等逻辑）
+        self.inventory_manager = InventoryManager(self)
         
         # 初始化默认配置
         self._init_default_settings()
@@ -418,7 +422,7 @@ class ARCButtonShopPlugin(Plugin):
         """显示物品选择面板"""
         try:
             # 获取玩家背包中的物品
-            inventory_items = self._get_player_inventory_items(player)
+            inventory_items = self.inventory_manager.get_inventory_items(player)
             
             if not inventory_items:
                 no_items_panel = ActionForm(
@@ -823,7 +827,7 @@ class ARCButtonShopPlugin(Plugin):
                 return
             
             if shop_type == "sell":
-                if not is_infinite and not self._player_has_item(player, item_info):
+                if not is_infinite and not self.inventory_manager.has_item(player, item_info):
                     player.send_message(self.language_manager.GetText("SHOP_ITEM_NOT_FOUND"))
                     del self.setting_shop_player[player.name]
                     return
@@ -872,7 +876,7 @@ class ARCButtonShopPlugin(Plugin):
             if is_infinite:
                 operation_success = True  # 无限商店不扣物品/预算
             elif shop_type == "sell":
-                operation_success = self._remove_item_from_player(player, item_info)
+                operation_success = self.inventory_manager.remove_item(player, item_info)
                 if not operation_success:
                     player.send_message(self.language_manager.GetText("SHOP_ITEM_REMOVE_FAILED"))
             else:
@@ -901,7 +905,7 @@ class ARCButtonShopPlugin(Plugin):
                     # 如果创建失败，根据商店类型进行回滚（无限商店未扣物品/预算，无需回滚）
                     if not is_infinite:
                         if shop_type == "sell":
-                            self._give_item_to_player(player, item_info)
+                            self.inventory_manager.give_item(player, item_info)
                         else:
                             self._change_player_money(player.name, int(budget))
                     player.send_message(self.language_manager.GetText("SHOP_CREATE_FAILED"))
@@ -986,7 +990,7 @@ class ARCButtonShopPlugin(Plugin):
                 'data': item_data.get('data', 0)
             }
             
-            if self._give_item_to_player(player, purchase_item):
+            if self.inventory_manager.give_item(player, purchase_item):
                 # 记录交易
                 self._record_transaction(shop_data['id'], player, quantity, shop_data['unit_price'], total_price, tax_amount)
                 
@@ -1018,15 +1022,15 @@ class ARCButtonShopPlugin(Plugin):
                 'data': item_data.get('data', 0)
             }
             
-            if not self._player_has_item(player, required_item):
+            if not self.inventory_manager.has_item(player, required_item):
                 return False, self.language_manager.GetText("SHOP_PLAYER_NO_ITEMS")
             
-            if not self._remove_item_from_player(player, required_item):
+            if not self.inventory_manager.remove_item(player, required_item):
                 return False, self.language_manager.GetText("SHOP_ITEM_REMOVE_FAILED")
             
             player_income = base_price - tax_amount
             if not self._change_player_money(player.name, player_income):
-                self._give_item_to_player(player, required_item)
+                self.inventory_manager.give_item(player, required_item)
                 return False, self.language_manager.GetText("SHOP_PAYMENT_FAILED")
             
             update_data = {
@@ -1286,450 +1290,6 @@ class ARCButtonShopPlugin(Plugin):
             return float(self.setting_manager.GetSetting("trade_tax_rate") or "0.05")
         except Exception:
             return 0.05
-
-    def _get_player_inventory_items(self, player):
-        """获取玩家背包物品"""
-        try:
-            items = []
-            # 使用EndStone inventory API遍历玩家背包
-            inventory = player.inventory
-            
-            for slot_index in range(inventory.size):
-                item_stack = inventory.get_item(slot_index)
-                
-                if item_stack and item_stack.type and item_stack.amount > 0:
-                    # 获取物品类型ID和显示名称
-                    item_type_id = item_stack.type.id
-                    item_type_translation_key = item_stack.type.translation_key
-                    
-                    # 尝试获取本地化的物品名称
-                    try:
-                        display_name = self.server.language.translate(
-                            item_type_translation_key,
-                            None,
-                            player.locale
-                        )
-                    except:
-                        # 如果翻译失败，使用类型ID作为备选
-                        display_name = item_type_id
-                    
-                    # 如果有自定义显示名称，优先使用
-                    if item_stack.item_meta and item_stack.item_meta.has_display_name:
-                        display_name = item_stack.item_meta.display_name
-                    
-                    # 获取附魔信息
-                    enchants = {}
-                    if item_stack.item_meta and item_stack.item_meta.enchants:
-                        try:
-                            # 附魔信息直接是字典格式 {enchant_key: level}
-                            if isinstance(item_stack.item_meta.enchants, dict):
-                                enchants = item_stack.item_meta.enchants.copy()
-                            else:
-                                # 如果是列表格式，转换为字典
-                                for enchant in item_stack.item_meta.enchants:
-                                    try:
-                                        if hasattr(enchant, 'type') and hasattr(enchant.type, 'id'):
-                                            enchant_id = enchant.type.id
-                                        else:
-                                            enchant_id = str(enchant.type)
-                                        
-                                        if hasattr(enchant, 'level'):
-                                            enchant_level = enchant.level
-                                        else:
-                                            enchant_level = 1  # 默认等级
-                                        
-                                        enchants[enchant_id] = enchant_level
-                                    except Exception as enchant_error:
-                                        self._safe_log('warning', f"[ARCButtonShop] Failed to get enchant info: {str(enchant_error)}")
-                                        continue
-                        except Exception as e:
-                            self._safe_log('warning', f"[ARCButtonShop] Failed to process enchants: {str(e)}")
-                            enchants = {}
-                    
-                    # 获取Lore信息
-                    lore = []
-                    if item_stack.item_meta and item_stack.item_meta.has_lore:
-                        try:
-                            lore = item_stack.item_meta.lore
-                            if not isinstance(lore, list):
-                                lore = []
-                        except Exception as lore_error:
-                            self._safe_log('warning', f"[ARCButtonShop] Failed to get lore info: {str(lore_error)}")
-                            lore = []
-                    
-                    items.append({
-                        'type': item_type_id,  # 使用类型ID而不是ItemType对象
-                        'type_translation_key': item_type_translation_key,  # 保存翻译键
-                        'name': display_name,
-                        'count': item_stack.amount,
-                        'data': item_stack.data,
-                        'enchants': enchants,  # 保存附魔信息
-                        'lore': lore,  # 保存Lore信息
-                        'slot_index': slot_index  # 记录槽位索引，用于后续操作
-                    })
-            
-            return items
-        except Exception as e:
-            self._safe_log('error', f"[ARCButtonShop] Get player inventory error: {str(e)}")
-            return []
-
-    def _player_has_item(self, player, item_info) -> bool:
-        """检查玩家是否拥有指定物品"""
-        try:
-            inventory = player.inventory
-            required_type = item_info['type']  # 现在是字符串ID
-            required_count = item_info['count']
-            required_data = item_info.get('data', 0)
-            required_enchants = item_info.get('enchants', {})
-            required_lore = item_info.get('lore', [])
-            
-            total_count = 0
-            debug_info = []  # 用于调试的背包信息
-            
-            # 遍历背包检查物品
-            for slot_index in range(inventory.size):
-                item_stack = inventory.get_item(slot_index)
-                
-                if not item_stack or not item_stack.type:
-                    continue
-                
-                # 记录调试信息
-                debug_item = {
-                    'slot': slot_index,
-                    'type': item_stack.type.id,
-                    'data': item_stack.data,
-                    'amount': item_stack.amount,
-                    'enchants': {},
-                    'lore': []
-                }
-                
-                # 获取附魔信息用于调试
-                if item_stack.item_meta and item_stack.item_meta.enchants:
-                    try:
-                        if isinstance(item_stack.item_meta.enchants, dict):
-                            debug_item['enchants'] = item_stack.item_meta.enchants.copy()
-                        else:
-                            for enchant in item_stack.item_meta.enchants:
-                                try:
-                                    if hasattr(enchant, 'type') and hasattr(enchant.type, 'id'):
-                                        enchant_id = enchant.type.id
-                                    else:
-                                        enchant_id = str(enchant.type)
-                                    
-                                    if hasattr(enchant, 'level'):
-                                        enchant_level = enchant.level
-                                    else:
-                                        enchant_level = 1
-                                    
-                                    debug_item['enchants'][enchant_id] = enchant_level
-                                except:
-                                    continue
-                    except:
-                        pass
-                
-                # 获取Lore信息用于调试
-                if item_stack.item_meta and item_stack.item_meta.has_lore:
-                    try:
-                        debug_item['lore'] = item_stack.item_meta.lore
-                        if not isinstance(debug_item['lore'], list):
-                            debug_item['lore'] = []
-                    except:
-                        pass
-                
-                debug_info.append(debug_item)
-                
-                # 检查基本类型和数据
-                if (item_stack.type.id == required_type and 
-                    item_stack.data == required_data):
-                    
-                    # 检查附魔信息
-                    item_enchants = {}
-                    if item_stack.item_meta and item_stack.item_meta.enchants:
-                        try:
-                            if isinstance(item_stack.item_meta.enchants, dict):
-                                item_enchants = item_stack.item_meta.enchants.copy()
-                            else:
-                                for enchant in item_stack.item_meta.enchants:
-                                    try:
-                                        if hasattr(enchant, 'type') and hasattr(enchant.type, 'id'):
-                                            enchant_id = enchant.type.id
-                                        else:
-                                            enchant_id = str(enchant.type)
-                                        
-                                        if hasattr(enchant, 'level'):
-                                            enchant_level = enchant.level
-                                        else:
-                                            enchant_level = 1
-                                        
-                                        item_enchants[enchant_id] = enchant_level
-                                    except:
-                                        continue
-                        except:
-                            item_enchants = {}
-                    
-                    # 检查Lore信息
-                    item_lore = []
-                    if item_stack.item_meta and item_stack.item_meta.has_lore:
-                        try:
-                            item_lore = item_stack.item_meta.lore
-                            if not isinstance(item_lore, list):
-                                item_lore = []
-                        except:
-                            item_lore = []
-                    
-                    # 比较附魔和Lore
-                    enchants_match = True
-                    if required_enchants:
-                        if not item_enchants:
-                            enchants_match = False
-                        else:
-                            for enchant_id, level in required_enchants.items():
-                                if enchant_id not in item_enchants or item_enchants[enchant_id] != level:
-                                    enchants_match = False
-                                    break
-                    
-                    lore_match = True
-                    if required_lore:
-                        if not item_lore:
-                            lore_match = False
-                        else:
-                            if len(required_lore) != len(item_lore):
-                                lore_match = False
-                            else:
-                                for i, lore_line in enumerate(required_lore):
-                                    if i >= len(item_lore) or item_lore[i] != lore_line:
-                                        lore_match = False
-                                        break
-                    
-                    # 如果所有条件都匹配，计算数量
-                    if enchants_match and lore_match:
-                        total_count += item_stack.amount
-                        
-                        if total_count >= required_count:
-                            return True
-            
-            # 如果没有找到匹配的物品，打印调试信息
-            if total_count < required_count:
-                print(f"[DEBUG] 玩家 {player.name} 背包内容:")
-                print(f"[DEBUG] 需要物品: {required_type}, 数据: {required_data}, 数量: {required_count}")
-                print(f"[DEBUG] 需要附魔: {required_enchants}")
-                print(f"[DEBUG] 需要Lore: {required_lore}")
-                print(f"[DEBUG] 背包物品:")
-                for item in debug_info:
-                    print(f"[DEBUG]   槽位{item['slot']}: {item['type']} x{item['amount']} (数据:{item['data']})")
-                    if item['enchants']:
-                        print(f"[DEBUG]     附魔: {item['enchants']}")
-                    if item['lore']:
-                        print(f"[DEBUG]     Lore: {item['lore']}")
-                print(f"[DEBUG] 找到匹配物品数量: {total_count}")
-            
-            return False
-        except Exception as e:
-            self._safe_log('error', f"[ARCButtonShop] Player has item check error: {str(e)}")
-            return False
-
-    def _remove_item_from_player(self, player, item_info) -> bool:
-        """从玩家背包移除物品"""
-        try:
-            inventory = player.inventory
-            required_type = item_info['type']  # 现在是字符串ID
-            required_count = item_info['count']
-            required_data = item_info.get('data', 0)
-            required_enchants = item_info.get('enchants', {})
-            required_lore = item_info.get('lore', [])
-            
-            remaining_to_remove = required_count
-            slots_to_modify = []
-            
-            # 首先检查是否有足够的物品
-            if not self._player_has_item(player, item_info):
-                return False
-            
-            # 收集需要修改的槽位信息
-            for slot_index in range(inventory.size):
-                if remaining_to_remove <= 0:
-                    break
-                    
-                item_stack = inventory.get_item(slot_index)
-                
-                if not item_stack or not item_stack.type:
-                    continue
-                
-                # 检查基本类型和数据
-                if (item_stack.type.id == required_type and 
-                    item_stack.data == required_data):
-                    
-                    # 检查附魔信息
-                    item_enchants = {}
-                    if item_stack.item_meta and item_stack.item_meta.enchants:
-                        try:
-                            if isinstance(item_stack.item_meta.enchants, dict):
-                                item_enchants = item_stack.item_meta.enchants.copy()
-                            else:
-                                for enchant in item_stack.item_meta.enchants:
-                                    try:
-                                        if hasattr(enchant, 'type') and hasattr(enchant.type, 'id'):
-                                            enchant_id = enchant.type.id
-                                        else:
-                                            enchant_id = str(enchant.type)
-                                        
-                                        if hasattr(enchant, 'level'):
-                                            enchant_level = enchant.level
-                                        else:
-                                            enchant_level = 1
-                                        
-                                        item_enchants[enchant_id] = enchant_level
-                                    except:
-                                        continue
-                        except:
-                            item_enchants = {}
-                    
-                    # 检查Lore信息
-                    item_lore = []
-                    if item_stack.item_meta and item_stack.item_meta.has_lore:
-                        try:
-                            item_lore = item_stack.item_meta.lore
-                            if not isinstance(item_lore, list):
-                                item_lore = []
-                        except:
-                            item_lore = []
-                    
-                    # 比较附魔和Lore
-                    enchants_match = True
-                    if required_enchants:
-                        if not item_enchants:
-                            enchants_match = False
-                        else:
-                            for enchant_id, level in required_enchants.items():
-                                if enchant_id not in item_enchants or item_enchants[enchant_id] != level:
-                                    enchants_match = False
-                                    break
-                    
-                    lore_match = True
-                    if required_lore:
-                        if not item_lore:
-                            lore_match = False
-                        else:
-                            if len(required_lore) != len(item_lore):
-                                lore_match = False
-                            else:
-                                for i, lore_line in enumerate(required_lore):
-                                    if i >= len(item_lore) or item_lore[i] != lore_line:
-                                        lore_match = False
-                                        break
-                    
-                    # 如果所有条件都匹配，收集槽位信息
-                    if enchants_match and lore_match:
-                        remove_from_slot = min(remaining_to_remove, item_stack.amount)
-                        slots_to_modify.append((slot_index, item_stack, remove_from_slot))
-                        remaining_to_remove -= remove_from_slot
-            
-            # 执行移除操作
-            for slot_index, original_stack, remove_count in slots_to_modify:
-                new_amount = original_stack.amount - remove_count
-                
-                if new_amount <= 0:
-                    # 清空槽位
-                    inventory.set_item(slot_index, None)
-                else:
-                    # 更新数量
-                    original_stack.amount = new_amount
-                    inventory.set_item(slot_index, original_stack)
-            
-            return True
-        except Exception as e:
-            self._safe_log('error', f"[ARCButtonShop] Remove item from player error: {str(e)}")
-            return False
-
-    def _give_item_to_player(self, player, item_info) -> bool:
-        """给玩家物品"""
-        try:
-            from endstone.inventory import ItemStack
-            
-            inventory = player.inventory
-            item_type_id = item_info['type']  # 现在是字符串ID
-            total_amount = item_info['count']
-            item_data = item_info.get('data', 0)
-            
-            # 验证数量
-            if total_amount <= 0:
-                self._safe_log('warning', f"[ARCButtonShop] Invalid item amount: {total_amount}")
-                return False
-            
-            remaining_to_give = total_amount
-            
-            # 创建物品堆栈并添加到背包
-            while remaining_to_give > 0:
-                # 计算本次要给予的数量（不超过64）
-                current_amount = min(remaining_to_give, 64)
-                
-                # 确保数量在有效范围内
-                if current_amount <= 0:
-                    break
-                
-                # 创建新的ItemStack
-                item_stack = ItemStack(
-                    type=item_type_id,  # 使用字符串ID
-                    amount=current_amount,  # 确保数量在1-255范围内
-                    data=item_data
-                )
-                
-                # 应用附魔信息
-                if 'enchants' in item_info and item_info['enchants']:
-                    for enchant_id, level in item_info['enchants'].items():
-                        try:
-                            # 这里需要根据EndStone的API来添加附魔
-                            # 具体实现可能需要根据EndStone的附魔API调整
-                            pass
-                        except Exception as e:
-                            self._safe_log('warning', f"[ARCButtonShop] Failed to apply enchant {enchant_id}: {str(e)}")
-                
-                # 应用Lore信息
-                if 'lore' in item_info and item_info['lore']:
-                    try:
-                        # 这里需要根据EndStone的API来设置Lore
-                        # 具体实现可能需要根据EndStone的Lore API调整
-                        pass
-                    except Exception as e:
-                        self._safe_log('warning', f"[ARCButtonShop] Failed to apply lore: {str(e)}")
-                
-                # 尝试添加到背包
-                remaining_items = inventory.add_item(item_stack)
-                
-                if remaining_items:
-                    # 如果有剩余物品，说明背包满了
-                    try:
-                        # 安全地获取剩余物品数量
-                        if hasattr(remaining_items, 'get'):
-                            first_remaining = remaining_items.get(0)
-                        elif isinstance(remaining_items, list) and len(remaining_items) > 0:
-                            first_remaining = remaining_items[0]
-                        else:
-                            first_remaining = None
-                        
-                        if first_remaining and hasattr(first_remaining, 'amount'):
-                            remaining_amount = first_remaining.amount
-                        else:
-                            remaining_amount = 0
-                        
-                        added_amount = item_stack.amount - remaining_amount
-                        remaining_to_give -= added_amount
-                        
-                        if added_amount == 0:
-                            # 背包完全满了，无法添加任何物品
-                            self._safe_log('warning', f"[ARCButtonShop] Player {player.name} inventory is full, could not give {remaining_to_give} items")
-                            return False
-                    except Exception as e:
-                        self._safe_log('warning', f"[ARCButtonShop] Error calculating remaining items: {str(e)}")
-                        remaining_to_give -= item_stack.amount
-                else:
-                    # 成功添加所有物品
-                    remaining_to_give -= item_stack.amount
-            
-            return True
-        except Exception as e:
-            self._safe_log('error', f"[ARCButtonShop] Give item to player error: {str(e)}")
-            return False
 
     def _handle_shop_manage_command(self, sender: CommandSender, args: list[str]) -> bool:
         """处理商店管理命令"""
@@ -2092,7 +1652,7 @@ class ARCButtonShopPlugin(Plugin):
                         'data': item_data.get('data', 0)
                     }
                     
-                    if self._player_has_item(sender, required_item) and self._remove_item_from_player(sender, required_item):
+                    if self.inventory_manager.has_item(sender, required_item) and self.inventory_manager.remove_item(sender, required_item):
                         # 更新库存
                         new_stock = shop_data['stock'] + quantity
                         self.db_manager.update(
@@ -2200,7 +1760,7 @@ class ARCButtonShopPlugin(Plugin):
                             'count': shop_data['stock'],
                             'data': item_data.get('data', 0)
                         }
-                        self._give_item_to_player(player, return_item)
+                        self.inventory_manager.give_item(player, return_item)
                         player.send_message(self.language_manager.GetText("SHOP_REMOVED_BY_OWNER_SELL").format(
                             shop_data['stock'], item_data['name']
                         ))
@@ -2219,7 +1779,7 @@ class ARCButtonShopPlugin(Plugin):
                     if collected_items:
                         total_items = sum(item['count'] for item in collected_items)
                         for item in collected_items:
-                            self._give_item_to_player(player, item)
+                            self.inventory_manager.give_item(player, item)
                         player.send_message(f"商店已删除，{len(collected_items)} 批收集的物品（共 {total_items} 个）已返还到背包")
             else:
                 player.send_message("系统商店已删除")
@@ -2294,7 +1854,7 @@ class ARCButtonShopPlugin(Plugin):
     def _collect_single_item(self, player, shop_data, item_data, item_index, from_all_shops=False):
         """收取单个物品"""
         try:
-            if self._give_item_to_player(player, item_data):
+            if self.inventory_manager.give_item(player, item_data):
                 collected_items = []
                 if shop_data.get('collected_items'):
                     try:
@@ -2351,7 +1911,7 @@ class ARCButtonShopPlugin(Plugin):
             success_count = 0
             failed_items = []
             for item in collected_items:
-                if self._give_item_to_player(player, item):
+                if self.inventory_manager.give_item(player, item):
                     success_count += 1
                 else:
                     failed_items.append(item)
@@ -2401,7 +1961,7 @@ class ARCButtonShopPlugin(Plugin):
                             'count': shop_data['stock'],
                             'data': item_data.get('data', 0)
                         }
-                        self._give_item_to_player(owner_player, return_item)
+                        self.inventory_manager.give_item(owner_player, return_item)
                 else:
                     if shop_data['stock'] > 0:
                         self._change_player_money(owner_name, shop_data['stock'])
@@ -2413,7 +1973,7 @@ class ARCButtonShopPlugin(Plugin):
                             collected_items = []
                     for item in collected_items:
                         if owner_player:
-                            self._give_item_to_player(owner_player, item)
+                            self.inventory_manager.give_item(owner_player, item)
             
             self.db_manager.delete(
                 table='button_shops',
