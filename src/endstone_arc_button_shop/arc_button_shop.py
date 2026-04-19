@@ -627,8 +627,76 @@ class ARCButtonShopPlugin(Plugin):
             player.send_message(self.language_manager.GetText("SHOP_PANEL_ERROR"))
 
     def _is_shop_infinite(self, shop_data) -> bool:
-        """判断商店是否为无限商店（系统商店）"""
-        return bool(shop_data.get('is_infinite', 0))
+        """判断商店是否为无限商店（系统商店）；兼容 SQLite 中 0/1、字符串等类型"""
+        if not shop_data:
+            return False
+        v = shop_data.get('is_infinite', 0)
+        if v is None:
+            return False
+        if isinstance(v, bool):
+            return v
+        try:
+            return int(v) != 0
+        except (TypeError, ValueError):
+            return bool(v)
+
+    def _get_shop_owner_display(self, shop_data) -> str:
+        """界面显示的「店主」：系统商店为官方，不显示创建者个人名（资金与其无关）"""
+        if self._is_shop_infinite(shop_data):
+            return "系统（官方商店）"
+        return shop_data.get('owner_name', '')
+
+    def _get_shop_type_manage_line(self, shop_data) -> str:
+        """管理/详情用：一行说明是出售还是收购（含系统无限说明）"""
+        shop_type = shop_data.get('shop_type', 'sell')
+        is_infinite = self._is_shop_infinite(shop_data)
+        if shop_type == 'sell':
+            if is_infinite:
+                return "§e系统·无限出售§r：其他玩家在此「购买」物品（扣买家钱，由系统发货，与创建者资金无关）"
+            return "§a出售商店§r：其他玩家在此「购买」物品（扣买家钱，货款给店主）"
+        if is_infinite:
+            return "§e系统·无限收购/回收§r：其他玩家在此「出售」物品换钱（收走物品，系统付钱，与创建者资金无关）"
+        return "§b收购/回收商店§r：其他玩家在此「出售」物品换钱（收走物品，从商店预算中支付）"
+
+    def _get_shop_type_short_tag(self, shop_data) -> str:
+        """列表按钮用短标签：出售 / 收购"""
+        shop_type = shop_data.get('shop_type', 'sell')
+        is_infinite = self._is_shop_infinite(shop_data)
+        if shop_type == 'sell':
+            return "§e[系统·出售]§r" if is_infinite else "§a[出售]§r"
+        return "§e[系统·收购]§r" if is_infinite else "§b[收购]§r"
+
+    def _get_shop_type_plain_headline(self, shop_data) -> str:
+        """管理面板顶部用：无 § 色码，避免部分客户端正文里看不清类型"""
+        shop_type = shop_data.get('shop_type', 'sell')
+        is_infinite = self._is_shop_infinite(shop_data)
+        sys_tag = "【系统·无限】" if is_infinite else ""
+        if shop_type == 'sell':
+            return f"{sys_tag}出售商店 — 其他玩家在此「购买」物品（向商店付钱）"
+        return f"{sys_tag}收购/回收商店 — 其他玩家在此「出售」物品换钱（把物品卖给商店）"
+
+    def _get_shop_manage_title_suffix(self, shop_data) -> str:
+        """表单标题用短后缀，与正文类型一致（窗口标题不易被截断）"""
+        shop_type = shop_data.get('shop_type', 'sell')
+        is_infinite = self._is_shop_infinite(shop_data)
+        if shop_type == 'sell':
+            return '（系统·出售）' if is_infinite else '（出售）'
+        return '（系统·收购）' if is_infinite else '（收购/回收）'
+
+    def _shop_item_transaction_payload(self, item_data: dict, count: int) -> dict:
+        """从商店 JSON item_data 构造背包校验/发放用的完整字段（含 NBT，避免丢失附魔书等标签）。"""
+        payload = {
+            'type': item_data['type'],
+            'name': item_data.get('name', item_data['type']),
+            'count': count,
+            'data': item_data.get('data', 0),
+            'enchants': item_data.get('enchants') or {},
+            'lore': item_data.get('lore') or [],
+        }
+        nbt_b64 = item_data.get('nbt_b64')
+        if nbt_b64:
+            payload['nbt_b64'] = nbt_b64
+        return payload
 
     def _show_shop_detail_panel(self, player, shop_data):
         """显示商店详情面板"""
@@ -637,7 +705,9 @@ class ARCButtonShopPlugin(Plugin):
             shop_type = shop_data.get('shop_type', 'sell')
             is_infinite = self._is_shop_infinite(shop_data)
             
-            shop_info = f"店主: {shop_data['owner_name']}\n"
+            shop_info = f"店主: {self._get_shop_owner_display(shop_data)}\n"
+            shop_info += f"类型: {self._get_shop_type_plain_headline(shop_data)}\n"
+            shop_info += f"{self._get_shop_type_manage_line(shop_data)}\n"
             shop_info += f"物品: {item_data.get('name', 'Unknown')}\n"
             if is_infinite:
                 shop_info += "库存: §e无限\n" if shop_type == "sell" else "预算: §e无限\n"
@@ -702,13 +772,13 @@ class ARCButtonShopPlugin(Plugin):
             item_data = json.loads(shop_data['item_data'])
             shop_type = shop_data.get('shop_type', 'sell')
             is_infinite = self._is_shop_infinite(shop_data)
-            
+            type_headline = f"{self._get_shop_type_plain_headline(shop_data)}\n\n"
             if shop_type == "sell":
-                purchase_info = f"物品: {item_data.get('name', 'Unknown')}\n"
+                purchase_info = type_headline + f"物品: {item_data.get('name', 'Unknown')}\n"
                 purchase_info += f"库存: {'无限' if is_infinite else shop_data['stock']}\n"
                 purchase_info += f"单价: {shop_data['unit_price']}\n"
             else:
-                purchase_info = f"收购物品: {item_data.get('name', 'Unknown')}\n"
+                purchase_info = type_headline + f"收购物品: {item_data.get('name', 'Unknown')}\n"
                 purchase_info += f"预算: {'无限' if is_infinite else shop_data['stock']}\n"
                 purchase_info += f"收购价: {shop_data['unit_price']}\n"
             
@@ -787,11 +857,12 @@ class ARCButtonShopPlugin(Plugin):
                     )
                     sender.send_form(error_form)
             
-            # 根据商店类型选择标题
+            # 根据商店类型选择标题，并附带类型后缀（与「管理商店」一致）
             if shop_type == "sell":
                 panel_title = self.language_manager.GetText("SHOP_PURCHASE_TITLE")
             else:
                 panel_title = self.language_manager.GetText("SHOP_SELL_TITLE")
+            panel_title = f"{panel_title}{self._get_shop_manage_title_suffix(shop_data)}"
             
             purchase_panel = ModalForm(
                 title=panel_title,
@@ -953,7 +1024,7 @@ class ARCButtonShopPlugin(Plugin):
             if buyer_money < total_price:
                 return False, self.language_manager.GetText("SHOP_INSUFFICIENT_FUNDS").format(total_price, buyer_money)
             
-            is_infinite = shop_data.get('is_infinite', 0)
+            is_infinite = self._is_shop_infinite(shop_data)
             if not is_infinite and shop_data['stock'] < quantity:
                 return False, self.language_manager.GetText("SHOP_INSUFFICIENT_STOCK")
             
@@ -983,24 +1054,19 @@ class ARCButtonShopPlugin(Plugin):
             
             # 给买家物品
             item_data = json.loads(shop_data['item_data'])
-            purchase_item = {
-                'type': item_data['type'],
-                'name': item_data['name'],
-                'count': quantity,
-                'data': item_data.get('data', 0)
-            }
-            
+            purchase_item = self._shop_item_transaction_payload(item_data, quantity)
+
             if self.inventory_manager.give_item(player, purchase_item):
                 # 记录交易
                 self._record_transaction(shop_data['id'], player, quantity, shop_data['unit_price'], total_price, tax_amount)
                 
-                # 通知店主
+                # 通知店主（系统商店不通知创建者，避免误解为收款）
                 self._notify_shop_owner(shop_data, player.name, quantity, item_data['name'], base_price, "sell")
                 
                 return True, self._get_purchase_success_message(quantity, item_data['name'], total_price, tax_amount)
             else:
-                # 交易失败回滚
-                self._rollback_sell_transaction(player, shop_data, total_price, base_price)
+                # 交易失败回滚（系统商店从未给店主加钱，回滚时不得扣店主）
+                self._rollback_sell_transaction(player, shop_data, total_price, base_price, is_infinite)
                 return False, self.language_manager.GetText("SHOP_ITEM_GIVE_FAILED")
                 
         except Exception as e:
@@ -1010,18 +1076,13 @@ class ARCButtonShopPlugin(Plugin):
     def _execute_buy_shop_purchase(self, player, shop_data, quantity, base_price, tax_amount, total_price):
         """执行收购商店的购买操作（玩家出售物品给收购商店，含无限商店）"""
         try:
-            is_infinite = shop_data.get('is_infinite', 0)
+            is_infinite = self._is_shop_infinite(shop_data)
             if not is_infinite and shop_data['stock'] < base_price:
                 return False, self.language_manager.GetText("SHOP_INSUFFICIENT_BUDGET")
             
             item_data = json.loads(shop_data['item_data'])
-            required_item = {
-                'type': item_data['type'],
-                'name': item_data['name'],
-                'count': quantity,
-                'data': item_data.get('data', 0)
-            }
-            
+            required_item = self._shop_item_transaction_payload(item_data, quantity)
+
             if not self.inventory_manager.has_item(player, required_item):
                 return False, self.language_manager.GetText("SHOP_PLAYER_NO_ITEMS")
             
@@ -1053,6 +1114,8 @@ class ARCButtonShopPlugin(Plugin):
                     'lore': item_data.get('lore', []),
                     'collect_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
+                if item_data.get('nbt_b64'):
+                    collected_item['nbt_b64'] = item_data['nbt_b64']
                 collected_items.append(collected_item)
                 update_data['stock'] = new_budget
                 update_data['collected_items'] = json.dumps(collected_items)
@@ -1069,7 +1132,7 @@ class ARCButtonShopPlugin(Plugin):
             # 记录交易（注意：对收购商店，玩家是卖家）
             self._record_transaction(shop_data['id'], player, quantity, shop_data['unit_price'], base_price, tax_amount, is_buy_shop=True)
             
-            # 通知店主
+            # 通知店主（系统商店不通知创建者）
             self._notify_shop_owner(shop_data, player.name, quantity, item_data['name'], base_price, "buy")
             
             return True, self._get_sell_success_message(quantity, item_data['name'], player_income, tax_amount)
@@ -1098,8 +1161,10 @@ class ARCButtonShopPlugin(Plugin):
             self._safe_log('error', f"[ARCButtonShop] Record transaction error: {str(e)}")
 
     def _notify_shop_owner(self, shop_data, buyer_name, quantity, item_name, amount, shop_type):
-        """通知店主"""
+        """通知店主（系统/无限商店不通知创建者，资金与创建者无关）"""
         try:
+            if self._is_shop_infinite(shop_data):
+                return
             owner_player = self.server.get_player(shop_data['owner_name'])
             if owner_player:
                 if shop_type == "sell":
@@ -1138,20 +1203,18 @@ class ARCButtonShopPlugin(Plugin):
                 quantity, item_name, income
             )
 
-    def _rollback_sell_transaction(self, player, shop_data, total_price, base_price):
-        """回滚出售交易"""
+    def _rollback_sell_transaction(self, player, shop_data, total_price, base_price, is_infinite=False):
+        """回滚出售交易（系统商店未给店主加钱，不得扣店主）"""
         try:
-            # 退还买家资金
             self._change_player_money(player.name, total_price)
-            # 扣除店主资金
-            self._change_player_money(shop_data['owner_name'], -base_price)
-            # 恢复库存
-            self.db_manager.update(
-                table='button_shops',
-                data={'stock': shop_data['stock']},
-                where='id = ?',
-                params=(shop_data['id'],)
-            )
+            if not is_infinite:
+                self._change_player_money(shop_data['owner_name'], -base_price)
+                self.db_manager.update(
+                    table='button_shops',
+                    data={'stock': shop_data['stock']},
+                    where='id = ?',
+                    params=(shop_data['id'],)
+                )
         except Exception as e:
             self._safe_log('error', f"[ARCButtonShop] Rollback transaction error: {str(e)}")
 
@@ -1340,15 +1403,13 @@ class ARCButtonShopPlugin(Plugin):
                 return
             panel = ActionForm(
                 title="管理全部商店（OP）",
-                content=f"共 {len(all_shops)} 个活跃商店，点击可管理"
+                content=f"共 {len(all_shops)} 个活跃商店。\n绿色[出售]=玩家在此买货；蓝色[收购]=玩家卖货换钱；黄色[系统]=官方无限商店。\n点击条目进入管理。"
             )
             for shop in all_shops[:50]:
                 item_data = json.loads(shop['item_data'])
                 is_infinite = self._is_shop_infinite(shop)
                 stock_text = "无限" if is_infinite else shop['stock']
-                button_text = f"{item_data['name']} - {shop['owner_name']} - 库存:{stock_text} - 单价:{shop['unit_price']}"
-                if is_infinite:
-                    button_text += " §e[系统]"
+                button_text = f"{self._get_shop_type_short_tag(shop)} {item_data['name']} - {self._get_shop_owner_display(shop)} - {'库存' if shop.get('shop_type', 'sell') == 'sell' else '预算'}:{stock_text} - 单价:{shop['unit_price']}"
                 panel.add_button(
                     button_text,
                     on_click=lambda sender, s=shop: self._show_shop_manage_panel(sender, s, from_all_shops=True)
@@ -1382,15 +1443,13 @@ class ARCButtonShopPlugin(Plugin):
             # 显示商店列表
             my_shops_panel = ActionForm(
                 title="我的商店",
-                content=f"你有 {len(my_shops)} 个商店"
+                content=f"你有 {len(my_shops)} 个商店。\n绿色[出售]=玩家来买货；蓝色[收购]=玩家卖货换钱；黄色[系统]=官方无限商店。"
             )
             
             for shop in my_shops:
                 item_data = json.loads(shop['item_data'])
                 stock_text = "无限" if self._is_shop_infinite(shop) else shop['stock']
-                button_text = f"{item_data['name']} - 库存:{stock_text} - 单价:{shop['unit_price']}"
-                if self._is_shop_infinite(shop):
-                    button_text += " §e[系统]"
+                button_text = f"{self._get_shop_type_short_tag(shop)} {item_data['name']} - 库存:{stock_text} - 单价:{shop['unit_price']}"
                 if item_data.get('enchants'):
                     button_text += " §b[附魔]"
                 if item_data.get('lore'):
@@ -1442,7 +1501,7 @@ class ARCButtonShopPlugin(Plugin):
             # 显示附近商店
             nearby_panel = ActionForm(
                 title="附近商店",
-                content=f"找到 {len(nearby_shops)} 个附近的商店"
+                content=f"找到 {len(nearby_shops)} 个附近的商店（前缀：出售=买货，收购=卖货换钱）"
             )
             
             for shop in nearby_shops[:20]:  # 最多显示20个
@@ -1451,7 +1510,7 @@ class ARCButtonShopPlugin(Plugin):
                     (shop['x'] - player_loc.x) ** 2 + 
                     (shop['z'] - player_loc.z) ** 2
                 )
-                button_text = f"{item_data['name']} - {shop['owner_name']} - {distance:.1f}方块"
+                button_text = f"{self._get_shop_type_short_tag(shop)} {item_data['name']} - {self._get_shop_owner_display(shop)} - {distance:.1f}方块"
                 
                 # 添加附魔和Lore标识
                 if item_data.get('enchants'):
@@ -1483,11 +1542,19 @@ class ARCButtonShopPlugin(Plugin):
             is_infinite = self._is_shop_infinite(shop_data)
             stock_text = "无限" if is_infinite else shop_data['stock']
             
-            manage_info = f"""
-商店信息:
+            price_label = "单价（玩家购买时每件）" if shop_type == "sell" else "单价（玩家出售时每件）"
+            is_op_player = getattr(player, 'is_op', False)
+            op_hint = "【OP 管理】先看类型：出售=别人来买货；收购=别人来卖货换钱。\n\n" if is_op_player else ""
+            # 无 § 的短标题置顶，避免正文里只注意到物品与单价
+            manage_info = f"""{op_hint}商店信息:
+————————————
+{self._get_shop_type_plain_headline(shop_data)}
+————————————
+{self._get_shop_type_manage_line(shop_data)}
+
 物品: {item_data['name']}
-库存: {stock_text}
-单价: {shop_data['unit_price']}
+{"库存" if shop_type == "sell" else "预算余额"}: {stock_text}
+{price_label}: {shop_data['unit_price']}
 位置: ({shop_data['x']}, {shop_data['y']}, {shop_data['z']})
 创建时间: {shop_data['create_time']}"""
             
@@ -1515,8 +1582,9 @@ class ARCButtonShopPlugin(Plugin):
                 total_collected = sum(item['count'] for item in collected_items)
                 manage_info += f"\n\n收集的物品: {total_collected} 个"
             
+            manage_title = f"管理商店{self._get_shop_manage_title_suffix(shop_data)}"
             manage_panel = ActionForm(
-                title="管理商店",
+                title=manage_title,
                 content=manage_info
             )
             
@@ -1603,8 +1671,8 @@ class ARCButtonShopPlugin(Plugin):
         """显示补充库存面板（from_all_shops 用于返回至管理面板时保持来源）"""
         try:
             item_data = json.loads(shop_data['item_data'])
-            
-            restock_info = f"为 {item_data['name']} 补充库存\n当前库存: {shop_data['stock']}"
+            restock_title = f"补充库存{self._get_shop_manage_title_suffix(shop_data)}"
+            restock_info = f"{self._get_shop_type_plain_headline(shop_data)}\n\n为 {item_data['name']} 补充库存\n当前库存: {shop_data['stock']}"
             
             # 添加附魔信息
             if item_data.get('enchants'):
@@ -1637,7 +1705,7 @@ class ARCButtonShopPlugin(Plugin):
                             raise ValueError("Quantity must be positive")
                     except ValueError:
                         error_form = ActionForm(
-                            title="补充库存",
+                            title=restock_title,
                             content="请输入有效的数量",
                             on_close=lambda s: self._show_restock_panel(s, shop_data, from_all_shops)
                         )
@@ -1645,13 +1713,8 @@ class ARCButtonShopPlugin(Plugin):
                         return
                     
                     # 检查玩家是否有足够的物品
-                    required_item = {
-                        'type': item_data['type'],
-                        'name': item_data['name'],
-                        'count': quantity,
-                        'data': item_data.get('data', 0)
-                    }
-                    
+                    required_item = self._shop_item_transaction_payload(item_data, quantity)
+
                     if self.inventory_manager.has_item(sender, required_item) and self.inventory_manager.remove_item(sender, required_item):
                         # 更新库存
                         new_stock = shop_data['stock'] + quantity
@@ -1663,14 +1726,15 @@ class ARCButtonShopPlugin(Plugin):
                         )
                         
                         success_form = ActionForm(
-                            title="补充库存",
+                            title=restock_title,
                             content=f"成功补充 {quantity} 个 {item_data['name']}",
-                            on_close=lambda s: self._show_my_shops_panel(s)
+                            on_close=lambda s: self._show_shop_manage_panel(s, shop_data, from_all_shops)
+                            if from_all_shops else self._show_my_shops_panel(s)
                         )
                         sender.send_form(success_form)
                     else:
                         error_form = ActionForm(
-                            title="补充库存",
+                            title=restock_title,
                             content="背包中没有足够的物品",
                             on_close=lambda s: self._show_restock_panel(s, shop_data, from_all_shops)
                         )
@@ -1679,14 +1743,14 @@ class ARCButtonShopPlugin(Plugin):
                 except Exception as e:
                     self._safe_log('error', f"[ARCButtonShop] Process restock error: {str(e)}")
                     error_form = ActionForm(
-                        title="补充库存",
+                        title=restock_title,
                         content="补充库存时出现错误",
                         on_close=lambda s: self._show_shop_manage_panel(s, shop_data, from_all_shops)
                     )
                     sender.send_form(error_form)
             
             restock_panel = ModalForm(
-                title="补充库存",
+                title=restock_title,
                 controls=[restock_label, quantity_input],
                 on_close=lambda sender: self._show_shop_manage_panel(sender, shop_data, from_all_shops),
                 on_submit=process_restock
@@ -1702,12 +1766,21 @@ class ARCButtonShopPlugin(Plugin):
         """显示删除商店确认面板（from_all_shops 为 True 时删除后返回「管理全部商店」）"""
         try:
             item_data = json.loads(shop_data['item_data'])
-            
-            confirm_content = f"""
+            shop_type = shop_data.get('shop_type', 'sell')
+            is_infinite = self._is_shop_infinite(shop_data)
+            stock_display = '无限' if is_infinite else shop_data['stock']
+            stock_line = (
+                f"剩余库存: {stock_display}"
+                if shop_type == 'sell'
+                else f"剩余预算: {stock_display}"
+            )
+            delete_title = f"删除商店{self._get_shop_manage_title_suffix(shop_data)}"
+            confirm_content = f"""{self._get_shop_type_plain_headline(shop_data)}
+
 确定要删除这个商店吗？
 
 物品: {item_data['name']}
-剩余库存: {shop_data['stock']}"""
+{stock_line}"""
             
             # 添加附魔信息
             if item_data.get('enchants'):
@@ -1721,10 +1794,15 @@ class ARCButtonShopPlugin(Plugin):
                 for lore_line in item_data['lore']:
                     confirm_content += f"\n  {lore_line}"
             
-            confirm_content += "\n\n删除后剩余库存将返还到你的背包中。"
+            if is_infinite:
+                confirm_content += "\n\n系统商店：删除后无库存/预算返还；与创建者资金无关。"
+            elif shop_type == 'sell':
+                confirm_content += "\n\n删除后剩余库存将返还给店主（在线时发到背包）。"
+            else:
+                confirm_content += "\n\n删除后剩余预算将返还给店主；未收取的收购品将返还给店主（在线时发到背包）。"
             
             confirm_panel = ActionForm(
-                title="删除商店",
+                title=delete_title,
                 content=confirm_content
             )
             
@@ -1754,12 +1832,7 @@ class ARCButtonShopPlugin(Plugin):
             if not is_infinite:
                 if shop_type == "sell":
                     if shop_data['stock'] > 0:
-                        return_item = {
-                            'type': item_data['type'],
-                            'name': item_data['name'],
-                            'count': shop_data['stock'],
-                            'data': item_data.get('data', 0)
-                        }
+                        return_item = self._shop_item_transaction_payload(item_data, shop_data['stock'])
                         self.inventory_manager.give_item(player, return_item)
                         player.send_message(self.language_manager.GetText("SHOP_REMOVED_BY_OWNER_SELL").format(
                             shop_data['stock'], item_data['name']
@@ -1803,6 +1876,7 @@ class ARCButtonShopPlugin(Plugin):
     def _show_collect_items_panel(self, player, shop_data, from_all_shops=False):
         """显示收取物品面板（from_all_shops 用于返回至管理面板时保持来源）"""
         try:
+            collect_title = f"收取物品{self._get_shop_manage_title_suffix(shop_data)}"
             collected_items = []
             if shop_data.get('collected_items'):
                 try:
@@ -1812,16 +1886,16 @@ class ARCButtonShopPlugin(Plugin):
             
             if not collected_items:
                 no_items_panel = ActionForm(
-                    title="收取物品",
-                    content="没有收集到任何物品",
+                    title=collect_title,
+                    content=f"{self._get_shop_type_plain_headline(shop_data)}\n\n没有收集到任何物品",
                     on_close=lambda sender: self._show_shop_manage_panel(sender, shop_data, from_all_shops)
                 )
                 player.send_form(no_items_panel)
                 return
             
             collect_panel = ActionForm(
-                title="收取物品",
-                content=f"收集到 {len(collected_items)} 批物品"
+                title=collect_title,
+                content=f"{self._get_shop_type_plain_headline(shop_data)}\n\n收集到 {len(collected_items)} 批物品"
             )
             
             for i, item in enumerate(collected_items):
@@ -1854,6 +1928,7 @@ class ARCButtonShopPlugin(Plugin):
     def _collect_single_item(self, player, shop_data, item_data, item_index, from_all_shops=False):
         """收取单个物品"""
         try:
+            collect_title = f"收取物品{self._get_shop_manage_title_suffix(shop_data)}"
             if self.inventory_manager.give_item(player, item_data):
                 collected_items = []
                 if shop_data.get('collected_items'):
@@ -1870,22 +1945,23 @@ class ARCButtonShopPlugin(Plugin):
                     params=(shop_data['id'],)
                 )
                 success_form = ActionForm(
-                    title="收取物品",
+                    title=collect_title,
                     content=f"成功收取 {item_data['count']} 个 {item_data['name']}",
                     on_close=lambda sender: self._show_collect_items_panel(sender, shop_data, from_all_shops)
                 )
                 player.send_form(success_form)
             else:
                 error_form = ActionForm(
-                    title="收取物品",
+                    title=collect_title,
                     content="背包空间不足，无法收取物品",
                     on_close=lambda sender: self._show_collect_items_panel(sender, shop_data, from_all_shops)
                 )
                 player.send_form(error_form)
         except Exception as e:
             self._safe_log('error', f"[ARCButtonShop] Collect single item error: {str(e)}")
+            collect_title = f"收取物品{self._get_shop_manage_title_suffix(shop_data)}"
             error_form = ActionForm(
-                title="收取物品",
+                title=collect_title,
                 content="收取物品时出现错误",
                 on_close=lambda sender: self._show_collect_items_panel(sender, shop_data, from_all_shops)
             )
@@ -1894,6 +1970,7 @@ class ARCButtonShopPlugin(Plugin):
     def _collect_all_items(self, player, shop_data, from_all_shops=False):
         """一键收取所有物品"""
         try:
+            collect_title = f"收取物品{self._get_shop_manage_title_suffix(shop_data)}"
             collected_items = []
             if shop_data.get('collected_items'):
                 try:
@@ -1902,8 +1979,8 @@ class ARCButtonShopPlugin(Plugin):
                     collected_items = []
             if not collected_items:
                 no_items_panel = ActionForm(
-                    title="收取物品",
-                    content="没有收集到任何物品",
+                    title=collect_title,
+                    content=f"{self._get_shop_type_plain_headline(shop_data)}\n\n没有收集到任何物品",
                     on_close=lambda sender: self._show_shop_manage_panel(sender, shop_data, from_all_shops)
                 )
                 player.send_form(no_items_panel)
@@ -1929,15 +2006,16 @@ class ARCButtonShopPlugin(Plugin):
             else:
                 result_content = "背包空间不足，无法收取任何物品"
             result_form = ActionForm(
-                title="收取物品",
+                title=collect_title,
                 content=result_content,
                 on_close=lambda sender: self._show_shop_manage_panel(sender, shop_data, from_all_shops)
             )
             player.send_form(result_form)
         except Exception as e:
             self._safe_log('error', f"[ARCButtonShop] Collect all items error: {str(e)}")
+            collect_title = f"收取物品{self._get_shop_manage_title_suffix(shop_data)}"
             error_form = ActionForm(
-                title="收取物品",
+                title=collect_title,
                 content="收取物品时出现错误",
                 on_close=lambda sender: self._show_shop_manage_panel(sender, shop_data, from_all_shops)
             )
@@ -1949,18 +2027,14 @@ class ARCButtonShopPlugin(Plugin):
             item_data = json.loads(shop_data['item_data'])
             shop_type = shop_data.get('shop_type', 'sell')
             is_infinite = self._is_shop_infinite(shop_data)
+            delete_title = f"删除商店{self._get_shop_manage_title_suffix(shop_data)}"
             owner_name = shop_data['owner_name']
             owner_player = self.server.get_player(owner_name)  # 店主（在线才可返还物品）
             
             if not is_infinite:
                 if shop_type == "sell":
                     if shop_data['stock'] > 0 and owner_player:
-                        return_item = {
-                            'type': item_data['type'],
-                            'name': item_data['name'],
-                            'count': shop_data['stock'],
-                            'data': item_data.get('data', 0)
-                        }
+                        return_item = self._shop_item_transaction_payload(item_data, shop_data['stock'])
                         self.inventory_manager.give_item(owner_player, return_item)
                 else:
                     if shop_data['stock'] > 0:
@@ -1991,7 +2065,7 @@ class ARCButtonShopPlugin(Plugin):
             
             go_back = lambda s: self._show_all_shops_panel(s) if from_all_shops else self._show_my_shops_panel(s)
             result_form = ActionForm(
-                title="删除商店",
+                title=delete_title,
                 content=result_content,
                 on_close=go_back
             )
@@ -2001,8 +2075,9 @@ class ARCButtonShopPlugin(Plugin):
         except Exception as e:
             self._safe_log('error', f"[ARCButtonShop] Execute delete shop error: {str(e)}")
             go_back = lambda s: self._show_all_shops_panel(s) if from_all_shops else self._show_my_shops_panel(s)
+            delete_title = f"删除商店{self._get_shop_manage_title_suffix(shop_data)}"
             error_form = ActionForm(
-                title="删除商店",
+                title=delete_title,
                 content="删除商店时出现错误",
                 on_close=go_back
             )

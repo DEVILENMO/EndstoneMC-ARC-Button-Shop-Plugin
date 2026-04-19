@@ -5,8 +5,9 @@
 Endstone ItemMeta.enchants 返回 dict[Enchantment, int]，键不可哈希会报错，
 故通过 get_enchant_level(id: str) 逐个查询已知附魔 id 获取等级。
 """
+import base64
 import traceback
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Endstone 已知附魔 id 列表（minecraft:xxx），用于 get_enchant_level 逐个查询，避免访问 .enchants
 _ENCHANT_IDS: List[str] = []
@@ -74,6 +75,26 @@ class InventoryManager:
         else:
             print(f"[{level.upper()}] {message}")
 
+    def _serialize_item_nbt(self, item_stack: Any) -> Optional[str]:
+        """
+        将物品用户数据序列化为 Base64（Bedrock little-endian），用于完整还原附魔书、药水等 ItemMeta 无法表达的标签。
+        """
+        try:
+            if not item_stack:
+                return None
+            nbt_compound = getattr(item_stack, "nbt", None)
+            if nbt_compound is None:
+                return None
+            keys_fn = getattr(nbt_compound, "keys", None)
+            if callable(keys_fn) and not list(keys_fn()):
+                return None
+            raw = nbt_compound.dump(byte_order="little")
+            if not raw:
+                return None
+            return base64.b64encode(raw).decode("ascii")
+        except Exception:
+            return None
+
     def _get_item_enchants(self, item_stack: Any) -> Dict[str, int]:
         """
         从 ItemStack 安全读取附魔信息（str->int）。
@@ -122,12 +143,16 @@ class InventoryManager:
         required_data: int,
         required_enchants: Dict[str, int],
         required_lore: List[str],
+        required_nbt_b64: Optional[str] = None,
     ) -> bool:
-        """判断单个 ItemStack 是否与 item_info 要求一致（类型、data、附魔、Lore）。"""
+        """判断单个 ItemStack 是否与 item_info 要求一致（类型、data；若有 nbt_b64 则比对完整 NBT，否则比对附魔与 Lore）。"""
         if not item_stack or not item_stack.type:
             return False
         if item_stack.type.id != required_type or item_stack.data != required_data:
             return False
+        if required_nbt_b64:
+            serialized = self._serialize_item_nbt(item_stack)
+            return serialized is not None and serialized == required_nbt_b64
         item_enchants = self._get_item_enchants(item_stack)
         item_lore = self._get_item_lore(item_stack)
         if required_enchants:
@@ -146,7 +171,8 @@ class InventoryManager:
     def get_inventory_items(self, player: Any) -> List[Dict[str, Any]]:
         """
         获取玩家背包中所有有效物品的列表。
-        每项为 dict：type, type_translation_key, name, count, data, enchants, lore, slot_index。
+        每项为 dict：type, type_translation_key, name, count, data, enchants, lore, slot_index；
+        若物品含完整用户 NBT（如附魔书），另含 nbt_b64（Base64 二进制 NBT）。
         """
         items: List[Dict[str, Any]] = []
         try:
@@ -181,18 +207,20 @@ class InventoryManager:
                         display_name = item_stack.item_meta.display_name
                     enchants = self._get_item_enchants(item_stack)
                     lore = self._get_item_lore(item_stack)
-                    items.append(
-                        {
-                            "type": item_type_id,
-                            "type_translation_key": item_type_translation_key,
-                            "name": display_name,
-                            "count": item_stack.amount,
-                            "data": item_stack.data,
-                            "enchants": enchants,
-                            "lore": lore,
-                            "slot_index": slot_index,
-                        }
-                    )
+                    nbt_b64 = self._serialize_item_nbt(item_stack)
+                    entry: Dict[str, Any] = {
+                        "type": item_type_id,
+                        "type_translation_key": item_type_translation_key,
+                        "name": display_name,
+                        "count": item_stack.amount,
+                        "data": item_stack.data,
+                        "enchants": enchants,
+                        "lore": lore,
+                        "slot_index": slot_index,
+                    }
+                    if nbt_b64:
+                        entry["nbt_b64"] = nbt_b64
+                    items.append(entry)
                 except Exception as item_e:
                     self._log(
                         "warning",
@@ -216,6 +244,7 @@ class InventoryManager:
             required_data = item_info.get("data", 0)
             required_enchants = item_info.get("enchants", {})
             required_lore = item_info.get("lore", [])
+            required_nbt_b64 = item_info.get("nbt_b64")
             total_count = 0
             for slot_index in range(inventory.size):
                 item_stack = inventory.get_item(slot_index)
@@ -225,6 +254,7 @@ class InventoryManager:
                     required_data,
                     required_enchants,
                     required_lore,
+                    required_nbt_b64,
                 ):
                     continue
                 total_count += item_stack.amount
@@ -244,6 +274,7 @@ class InventoryManager:
             required_data = item_info.get("data", 0)
             required_enchants = item_info.get("enchants", {})
             required_lore = item_info.get("lore", [])
+            required_nbt_b64 = item_info.get("nbt_b64")
             if not self.has_item(player, item_info):
                 return False
             remaining_to_remove = required_count
@@ -258,6 +289,7 @@ class InventoryManager:
                     required_data,
                     required_enchants,
                     required_lore,
+                    required_nbt_b64,
                 ):
                     continue
                 remove_from_slot = min(remaining_to_remove, item_stack.amount)
@@ -299,7 +331,21 @@ class InventoryManager:
                     amount=current_amount,
                     data=item_data,
                 )
-                if item_info.get("enchants") or item_info.get("lore"):
+                nbt_b64 = item_info.get("nbt_b64")
+                if nbt_b64:
+                    try:
+                        from endstone.nbt import load
+
+                        raw_nbt = base64.b64decode(nbt_b64)
+                        tag, _name = load(raw_nbt, byte_order="little")
+                        if tag is not None and hasattr(item_stack, "nbt"):
+                            item_stack.nbt = tag
+                    except Exception as e:
+                        self._log(
+                            "warning",
+                            f"[ARCButtonShop] Restore item NBT failed: {e}",
+                        )
+                elif item_info.get("enchants") or item_info.get("lore"):
                     try:
                         meta = item_stack.item_meta
                         if meta and item_info.get("enchants"):
