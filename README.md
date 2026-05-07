@@ -1,6 +1,6 @@
 # 弧光按钮商店插件 (ARC Button Shop Plugin)
 
-[![版本](https://img.shields.io/badge/版本-0.2.0-blue.svg)](https://github.com/EndstoneMC/python-example-plugin)
+[![版本](https://img.shields.io/badge/版本-0.2.2-blue.svg)](https://github.com/DEVILENMO/EndstoneMC-ARC-Button-Shop-Plugin)
 [![EndStone](https://img.shields.io/badge/EndStone-0.10+-green.svg)](https://github.com/EndstoneMC/endstone)
 [![Python](https://img.shields.io/badge/Python-3.13+-yellow.svg)](https://www.python.org/)
 
@@ -334,7 +334,19 @@ item_stack.item_meta # 物品元数据
 
 ## 📝 更新日志
 
-### v0.2.0 (当前版本)
+### v0.2.2 (当前版本)
+
+#### 最近修复更新
+- 🩹 **购买与背包满时的经济漏洞修复**：出售商店购买改为**先尝试发放物品，再按实际成功发放的数量**扣款、计税、扣库存并记账。修复此前在背包空间不足、物品只能部分进包时，错误触发全额退款路径，导致**少扣或不扣买家钱**的问题；若实际发放少于输入数量，会提示本次仅成功购买的数量。
+- 🧮 **发放数量 API**：`InventoryManager` 新增 `give_item_count`，返回实际发放数量；`give_item` 据此判断是否足额发放，便于上层按真实到账量结算。
+
+### v0.2.1
+
+#### 最近修复更新
+- 🩹 **NBT兼容修复**：增加对更新后 NBT 结构的支持，确保物品数据读取与识别更加稳定
+- 🔄 **数据兼容性优化**：针对新版 NBT 变化优化了商店物品信息处理流程，降低因数据格式变动导致的异常风险
+
+### v0.2.0
 
 #### 基础功能
 - ✨ 全新的按钮商店系统

@@ -1028,46 +1028,77 @@ class ARCButtonShopPlugin(Plugin):
             if not is_infinite and shop_data['stock'] < quantity:
                 return False, self.language_manager.GetText("SHOP_INSUFFICIENT_STOCK")
             
-            if not self._change_player_money(player.name, -total_price):
+            # 先尝试发放物品，按“实际发放数量”结算，避免背包满导致部分到账但全额退款的漏洞
+            item_data = json.loads(shop_data['item_data'])
+            purchase_item = self._shop_item_transaction_payload(item_data, quantity)
+            given_qty = self.inventory_manager.give_item_count(player, purchase_item)
+
+            if given_qty <= 0:
+                return False, self.language_manager.GetText("SHOP_ITEM_GIVE_FAILED")
+
+            # 按实际发放数量重新计算费用/税
+            actual_base_price = int(given_qty * shop_data['unit_price'])
+            actual_tax_amount = self._calculate_tax(actual_base_price)
+            actual_total_price = actual_base_price + actual_tax_amount
+
+            # 买家扣款
+            if not self._change_player_money(player.name, -actual_total_price):
+                # 扣款失败：尝试把已发物品收回
+                try:
+                    rollback_item = self._shop_item_transaction_payload(item_data, given_qty)
+                    self.inventory_manager.remove_item(player, rollback_item)
+                except Exception:
+                    pass
                 return False, self.language_manager.GetText("SHOP_PAYMENT_FAILED")
-            
-            if not is_infinite and not self._change_player_money(shop_data['owner_name'], base_price):
-                self._change_player_money(player.name, total_price)
+
+            # 店主收款（系统/无限商店不收款）
+            if not is_infinite and not self._change_player_money(shop_data['owner_name'], actual_base_price):
+                # 店主收款失败：退还买家并回收物品
+                self._change_player_money(player.name, actual_total_price)
+                try:
+                    rollback_item = self._shop_item_transaction_payload(item_data, given_qty)
+                    self.inventory_manager.remove_item(player, rollback_item)
+                except Exception:
+                    pass
                 return False, self.language_manager.GetText("SHOP_OWNER_PAYMENT_FAILED")
-            # 无限商店：不给店主加钱（系统商店）
-            
+
+            # 更新库存（非无限商店按实际发放数量扣库存）
             update_data = {
                 'last_purchase_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             if not is_infinite:
-                new_stock = shop_data['stock'] - quantity
+                new_stock = shop_data['stock'] - int(given_qty)
                 update_data['stock'] = new_stock
                 if new_stock <= 0:
                     update_data['is_active'] = 0
-            
+
             self.db_manager.update(
                 table='button_shops',
                 data=update_data,
                 where='id = ?',
                 params=(shop_data['id'],)
             )
-            
-            # 给买家物品
-            item_data = json.loads(shop_data['item_data'])
-            purchase_item = self._shop_item_transaction_payload(item_data, quantity)
 
-            if self.inventory_manager.give_item(player, purchase_item):
-                # 记录交易
-                self._record_transaction(shop_data['id'], player, quantity, shop_data['unit_price'], total_price, tax_amount)
-                
-                # 通知店主（系统商店不通知创建者，避免误解为收款）
-                self._notify_shop_owner(shop_data, player.name, quantity, item_data['name'], base_price, "sell")
-                
-                return True, self._get_purchase_success_message(quantity, item_data['name'], total_price, tax_amount)
-            else:
-                # 交易失败回滚（系统商店从未给店主加钱，回滚时不得扣店主）
-                self._rollback_sell_transaction(player, shop_data, total_price, base_price, is_infinite)
-                return False, self.language_manager.GetText("SHOP_ITEM_GIVE_FAILED")
+            # 记录交易（按实际数量）
+            self._record_transaction(
+                shop_data['id'],
+                player,
+                int(given_qty),
+                shop_data['unit_price'],
+                actual_total_price,
+                actual_tax_amount
+            )
+
+            # 通知店主（按实际数量）
+            self._notify_shop_owner(shop_data, player.name, int(given_qty), item_data['name'], actual_base_price, "sell")
+
+            # 若实际发放少于输入数量，给出明确提示
+            if int(given_qty) < int(quantity):
+                msg = self._get_purchase_success_message(int(given_qty), item_data['name'], actual_total_price, actual_tax_amount)
+                msg += f"\n§e注意：背包空间不足，本次仅成功购买 {given_qty}/{quantity} 个，其余未购买。"
+                return True, msg
+
+            return True, self._get_purchase_success_message(int(given_qty), item_data['name'], actual_total_price, actual_tax_amount)
                 
         except Exception as e:
             self._safe_log('error', f"[ARCButtonShop] Execute sell shop purchase error: {str(e)}")

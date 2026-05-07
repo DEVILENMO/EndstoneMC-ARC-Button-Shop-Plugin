@@ -311,6 +311,14 @@ class InventoryManager:
 
     def give_item(self, player: Any, item_info: Dict[str, Any]) -> bool:
         """向玩家背包发放物品（类型、数量、data；附魔/Lore 若 API 支持则应用）。"""
+        given = self.give_item_count(player, item_info)
+        return given >= int(item_info.get("count", 0) or 0)
+
+    def give_item_count(self, player: Any, item_info: Dict[str, Any]) -> int:
+        """
+        尝试向玩家背包发放物品，返回**实际成功发放的数量**（可能为部分）。
+        注意：当背包不足时不会强行回滚已发放部分；调用方需要基于返回值决定扣款/回滚策略。
+        """
         try:
             from endstone.inventory import ItemStack
 
@@ -320,8 +328,9 @@ class InventoryManager:
             item_data = item_info.get("data", 0)
             if total_amount <= 0:
                 self._log("warning", f"[ARCButtonShop] Invalid item amount: {total_amount}")
-                return False
+                return 0
             remaining_to_give = total_amount
+            given_total = 0
             while remaining_to_give > 0:
                 current_amount = min(remaining_to_give, 64)
                 if current_amount <= 0:
@@ -390,24 +399,28 @@ class InventoryManager:
                             else 0
                         )
                         added_amount = item_stack.amount - remaining_amount
+                        if added_amount > 0:
+                            given_total += added_amount
                         remaining_to_give -= added_amount
                         if added_amount == 0:
                             self._log(
                                 "warning",
                                 f"[ARCButtonShop] Player {player.name} inventory full",
                             )
-                            return False
+                            break
                     except Exception as e:
                         self._log(
                             "warning",
                             f"[ARCButtonShop] Error calculating remaining: {e}",
                         )
-                        remaining_to_give -= item_stack.amount
+                        # 计算失败时，宁可保守：认为本次未成功添加，直接停止，避免错误累计
+                        break
                 else:
                     remaining_to_give -= item_stack.amount
-            return True
+                    given_total += item_stack.amount
+            return int(given_total)
         except Exception as e:
             self._log(
                 "error", f"[ARCButtonShop] Give item to player error: {str(e)}"
             )
-            return False
+            return 0
